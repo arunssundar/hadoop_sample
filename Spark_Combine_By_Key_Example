@@ -1,0 +1,58 @@
+val pfm_base = "delimited.csv"; //args(0);
+    //    val rid = "rid_805_1120.txt";
+    val conf = new SparkConf().setAppName("ScalaTest").setMaster("local")
+    val sc = new SparkContext(conf)
+
+    val cust_date: List[Long] = List(201445, 201544, 201345, 201444, 201451, 201525, 201351, 201425)
+    sc.broadcast(cust_date)
+
+    type input_Collector = (Double, Double, Long)
+    type output_Collector = (Array[Double],Long)
+
+    val createCombiner = (Agg: input_Collector) => {
+      println("Create Combiner",Agg)
+      val collector_list: (Array[Double],Long) = (Array(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),999999)
+      add_metrics(collector_list, Agg, cust_date)
+    }
+
+    val mergeValue = (collector: output_Collector, score: input_Collector) => {
+      //ty_52_sales,ly_52_sales,ty_52_units,ly_52_units,ty_cust_52_sales,ty_cust_52_units,ly_cust_52_sales,ly_cust_52_units
+      add_metrics(collector, score, cust_date)
+    }
+
+    val mergeCombiners = (collector1: output_Collector, collector2: output_Collector) => {
+      val collect_out = (collector1._1, collector2._1).zipped.map(_ + _)
+      (collect_out,math.min(collector1._2, collector2._2))
+    }
+//collect_out(0),collect_out(1),collect_out(2),collect_out(3),collect_out(4),collect_out(5),collect_out(6),collect_out(7)
+    //    val rid_count = sc.textFile(rid).count
+    val pfm_baseLines = sc.textFile(pfm_base, 1).cache()
+    val pfm_rid_map = pfm_baseLines.map(x => (x.split(',')(1).toLong, (x.split(',')(2).toDouble, x.split(',')(3).toDouble, x.split(',')(4).toLong)))
+    val rid_aggregation = pfm_rid_map.combineByKey(createCombiner, mergeValue, mergeCombiners)
+    //filter(x => (x._1 == 720))
+    rid_aggregation.map(x=>(x._1,x._2._1(0),x._2._1(1),x._2._1(2),x._2._1(3),x._2._1(4),x._2._1(5),x._2._1(6),x._2._1(7),x._2._2)).foreach(println)
+  }
+
+  def add_metrics(collector: (Array[Double],Long), input: (Double, Double, Long), cust_date: List[Long]): (Array[Double],Long) = {
+
+    val (sales, units, wm_yr_wk_nbr) = input
+    //var (c) = collector
+    if (wm_yr_wk_nbr >= cust_date(0) && wm_yr_wk_nbr <= cust_date(1)) {
+      collector._1(0) = collector._1(0) + sales
+      collector._1(2) = collector._1(2) + units
+    }
+    if (wm_yr_wk_nbr >= cust_date(2) && wm_yr_wk_nbr <= cust_date(3)) {
+      collector._1(1) = collector._1(1) + sales
+      collector._1(3) = collector._1(3) + units
+    }
+    if (wm_yr_wk_nbr >= cust_date(4) && wm_yr_wk_nbr <= cust_date(5)) {
+      collector._1(4) = collector._1(4) + sales
+      collector._1(6) = collector._1(6) + units
+    }
+    if (wm_yr_wk_nbr >= cust_date(6) && wm_yr_wk_nbr <= cust_date(7)) {
+      collector._1(5) = collector._1(5) + sales
+      collector._1(7) = collector._1(7) + units
+    }
+    val min_wk=math.min(collector._2,wm_yr_wk_nbr)
+    return (collector._1,min_wk)
+  }
